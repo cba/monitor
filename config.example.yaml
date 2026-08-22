@@ -1,0 +1,82 @@
+# Monitor 配置文件
+
+monitors:
+  # HTTP/HTTPS 网址监控
+  - name: 官网
+    type: http
+    target: https://example.com
+    interval: 60          # 检查间隔（秒）
+    alert_interval: 300   # 报警间隔（秒）
+    enabled: true
+
+  # TCP 端口监控
+  - name: Redis服务
+    type: tcp
+    target: 192.168.1.100:6379
+    interval: 30
+    alert_interval: 120
+    enabled: true
+
+  # ICMP Ping 监控
+  - name: 服务器存活
+    type: icmp
+    target: 192.168.1.1
+    interval: 60
+    alert_interval: 300
+    enabled: true
+
+  # HTTPS 证书监控
+  - name: SSL证书
+    type: ssl
+    target: example.com:443
+    interval: 3600        # 每小时检查一次
+    alert_interval: 86400 # 每天报警一次
+    enabled: true
+
+  # HTTP 关键字监控
+  - name: 首页关键词
+    type: keyword
+    target: "https://example.com|Hello"
+    interval: 120
+    alert_interval: 600
+    enabled: true
+
+  # MySQL 监控
+  - name: MySQL数据库
+    type: mysql
+    target: "user:password@tcp(127.0.0.1:3306)/mydb"
+    interval: 60
+    alert_interval: 300
+    enabled: true
+
+  # Redis 监控
+  - name: Redis服务
+    type: redis
+    target: 127.0.0.1:6379
+    interval: 30
+    alert_interval: 120
+    enabled: true
+
+# 通知渠道
+notifiers:
+  # 企业微信
+  - name: 运维群
+    type: wechat
+    webhook: https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY
+    enabled: true
+
+  # 企业微信应用消息
+  - name: 运维通知
+    type: wechat_app
+    enabled: true
+    extra:
+      corp_id: YOUR_CORP_ID
+      agent_id: YOUR_AGENT_ID
+      secret: YOUR_SECRET
+      to_users: "UserID1|UserID2"  # 多个用户用 | 分隔，@all 发送给所有人
+
+  # 钉钉
+  - name: 钉钉群
+    type: dingtalk
+    webhook: https://oapi.dingtalk.com/robot/send?access_token=YOUR_TOKEN
+    enabled: true
