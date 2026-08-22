@@ -14,18 +14,8 @@
 
 ## 安装
 
-### 编译安装
-
 ```bash
-git clone https://github.com/cba/monitor.git
-cd monitor
-go build -o monitor .
-```
-
-### 安装到系统路径
-
-```bash
-go install .
+go install github.com/cba/monitor@latest
 ```
 
 ## 快速开始

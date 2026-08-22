@@ -14,18 +14,8 @@ A lightweight service monitoring tool with multiple monitor types and notificati
 
 ## Installation
 
-### Build from source
-
 ```bash
-git clone https://github.com/cba/monitor.git
-cd monitor
-go build -o monitor .
-```
-
-### Install to system path
-
-```bash
-go install .
+go install github.com/cba/monitor@latest
 ```
 
 ## Quick Start
