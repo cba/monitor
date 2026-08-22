@@ -6,7 +6,7 @@ A lightweight service monitoring tool with multiple monitor types and notificati
 
 ## Features
 
-- **7 monitor types**: HTTP/HTTPS, TCP port, ICMP Ping, SSL certificate, HTTP keyword, MySQL, Redis
+- **12 monitor types**: HTTP/HTTPS, TCP port, ICMP Ping, SSL certificate, HTTP keyword, MySQL, Redis, CPU load, Memory, Disk, Process, Docker container
 - **3 notification channels**: WeChat Work Webhook, WeChat Work App API, DingTalk
 - **Hot reload**: Auto-reload on config file changes, no restart needed
 - **Independent config**: Per-monitor check interval and alert interval
@@ -247,6 +247,84 @@ Monitor Redis service connectivity.
 
 - **target**: `host:port` format
 - **Status**: PING command success = up
+
+### CPU Load
+
+Monitor server CPU load average.
+
+```yaml
+- name: Server CPU
+  type: cpu_load
+  target: cpu_load
+  interval: 60
+  alert_interval: 300
+```
+
+- **target**: `cpu_load` or `user:pass@host,cpu_load[,warning,critical]`
+- **Status**: 1-min load average below warning = up, above = warning, above critical = down
+- **Defaults**: warning=5.0, critical=10.0
+
+### Memory Usage
+
+Monitor server memory usage.
+
+```yaml
+- name: Server Memory
+  type: memory
+  target: memory
+  interval: 60
+  alert_interval: 300
+```
+
+- **target**: `memory` or `user:pass@host,memory[,warning,critical]`
+- **Status**: Usage below warning = up, above = warning, above critical = down
+- **Defaults**: warning=80%, critical=90%
+
+### Disk Usage
+
+Monitor disk partition usage.
+
+```yaml
+- name: Root Partition
+  type: disk
+  target: "disk,/,80,90"
+  interval: 300
+  alert_interval: 600
+```
+
+- **target**: `disk,mountpoint[,warning,critical]` or `user:pass@host,disk,mountpoint[,warning,critical]`
+- **Status**: Usage below warning = up, above = warning, above critical = down
+- **Defaults**: warning=80%, critical=90%
+
+### Process Alive
+
+Monitor if a specific process is running.
+
+```yaml
+- name: Nginx Process
+  type: process
+  target: "process,nginx"
+  interval: 30
+  alert_interval: 120
+```
+
+- **target**: `process,name` or `user:pass@host,process,name`
+- **Status**: Process exists = up, not found = down
+
+### Docker Container
+
+Monitor if a Docker container is running.
+
+```yaml
+- name: Redis Container
+  type: container
+  target: "container,redis"
+  interval: 60
+  alert_interval: 300
+```
+
+- **target**: `container,name` or `user:pass@host,container,name`
+- **Status**: Container running = up, stopped or not found = down
 
 ## Notification Channels
 

@@ -6,7 +6,7 @@
 
 ## 功能特性
 
-- **7 种监控类型**：HTTP/HTTPS、TCP 端口、ICMP Ping、SSL 证书、HTTP 关键字、MySQL、Redis
+- **12 种监控类型**：HTTP/HTTPS、TCP 端口、ICMP Ping、SSL 证书、HTTP 关键字、MySQL、Redis、CPU 负载、内存使用率、磁盘使用率、进程存活、Docker 容器
 - **3 种通知渠道**：企业微信 Webhook、企业微信应用消息、钉钉
 - **热更新**：修改配置文件后自动重载，无需重启
 - **独立配置**：每个监控项独立设置检查间隔和报警间隔
@@ -247,6 +247,84 @@ notifiers:
 
 - **target**：`host:port` 格式
 - **判断标准**：PING 命令成功为 up
+
+### CPU 负载
+
+监控服务器 CPU 负载。
+
+```yaml
+- name: 服务器CPU
+  type: cpu_load
+  target: cpu_load
+  interval: 60
+  alert_interval: 300
+```
+
+- **target**：`cpu_load` 或 `user:pass@host,cpu_load[,warning,critical]`
+- **判断标准**：1分钟 load average 低于 warning 为 up，超过为 warning，超过 critical 为 down
+- **默认阈值**：warning=5.0，critical=10.0
+
+### 内存使用率
+
+监控服务器内存使用率。
+
+```yaml
+- name: 服务器内存
+  type: memory
+  target: memory
+  interval: 60
+  alert_interval: 300
+```
+
+- **target**：`memory` 或 `user:pass@host,memory[,warning,critical]`
+- **判断标准**：使用率低于 warning 为 up，超过为 warning，超过 critical 为 down
+- **默认阈值**：warning=80%，critical=90%
+
+### 磁盘使用率
+
+监控磁盘分区使用率。
+
+```yaml
+- name: 根分区
+  type: disk
+  target: "disk,/,80,90"
+  interval: 300
+  alert_interval: 600
+```
+
+- **target**：`disk,mountpoint[,warning,critical]` 或 `user:pass@host,disk,mountpoint[,warning,critical]`
+- **判断标准**：使用率低于 warning 为 up，超过为 warning，超过 critical 为 down
+- **默认阈值**：warning=80%，critical=90%
+
+### 进程存活
+
+监控指定进程是否在运行。
+
+```yaml
+- name: Nginx进程
+  type: process
+  target: "process,nginx"
+  interval: 30
+  alert_interval: 120
+```
+
+- **target**：`process,name` 或 `user:pass@host,process,name`
+- **判断标准**：进程存在为 up，不存在为 down
+
+### Docker 容器
+
+监控 Docker 容器是否在运行。
+
+```yaml
+- name: Redis容器
+  type: container
+  target: "container,redis"
+  interval: 60
+  alert_interval: 300
+```
+
+- **target**：`container,name` 或 `user:pass@host,container,name`
+- **判断标准**：容器运行中为 up，停止或不存在为 down
 
 ## 通知渠道
 
