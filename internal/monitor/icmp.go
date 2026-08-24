@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"os/exec"
 	"runtime"
+	"strings"
 	"time"
 
-	"golang.org/x/text/encoding/simplifiedchinese"
+	"github.com/cba/monitor/internal/config"
 )
 
 type icmpMonitor struct{}
@@ -18,25 +19,32 @@ func init() {
 
 func (m *icmpMonitor) Name() string { return "icmp" }
 
-func (m *icmpMonitor) Check(ctx context.Context, target string) (*Result, error) {
-	var cmd *exec.Cmd
-	if runtime.GOOS == "windows" {
-		cmd = exec.CommandContext(ctx, "ping", "-n", "1", "-w", "3000", target)
+func (m *icmpMonitor) Check(ctx context.Context, cfg *config.MonitorConfig) (*Result, error) {
+	target := cfg.Target
+	re := buildRemoteExec(cfg)
+
+	var out string
+	var err error
+	start := time.Now()
+
+	if re.User != "" {
+		// Remote: always Linux
+		out, err = execCommand(ctx, re, fmt.Sprintf("ping -c 1 -W 3 %s", target))
+	} else if runtime.GOOS == "windows" {
+		cmd := exec.CommandContext(ctx, "ping", "-n", "1", "-w", "3000", target)
+		var buf []byte
+		buf, err = cmd.CombinedOutput()
+		out = string(buf)
 	} else {
-		cmd = exec.CommandContext(ctx, "ping", "-c", "1", "-W", "3", target)
+		cmd := exec.CommandContext(ctx, "ping", "-c", "1", "-W", "3", target)
+		var buf []byte
+		buf, err = cmd.CombinedOutput()
+		out = string(buf)
 	}
 
-	start := time.Now()
-	output, err := cmd.CombinedOutput()
 	latency := time.Since(start)
 	if err != nil {
-		msg := string(output)
-		if runtime.GOOS == "windows" {
-			if decoded, dErr := simplifiedchinese.GBK.NewDecoder().Bytes(output); dErr == nil {
-				msg = string(decoded)
-			}
-		}
-		return &Result{Status: "down", Message: fmt.Sprintf("ping failed: %s", msg), Latency: latency, Timestamp: time.Now()}, nil
+		return &Result{Status: "down", Message: fmt.Sprintf("Ping %s failed: %s", target, strings.TrimSpace(out)), Latency: latency, Timestamp: time.Now()}, nil
 	}
-	return &Result{Status: "up", Message: "Ping successful", Latency: latency, Timestamp: time.Now()}, nil
+	return &Result{Status: "up", Message: fmt.Sprintf("Ping %s OK", target), Latency: latency, Timestamp: time.Now()}, nil
 }

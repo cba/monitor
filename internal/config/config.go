@@ -7,29 +7,66 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// Defaults holds default values inherited by all monitors.
+type Defaults struct {
+	Interval      int  `yaml:"interval"`
+	AlertInterval int  `yaml:"alert_interval"`
+	Enabled       bool `yaml:"enabled"`
+}
+
+// SSHConfig holds SSH connection parameters for remote monitors.
+type SSHConfig struct {
+	Host     string `yaml:"host,omitempty"`
+	User     string `yaml:"user,omitempty"`
+	Password string `yaml:"password,omitempty"`
+	KeyFile  string `yaml:"key_file,omitempty"`
+	CertFile string `yaml:"cert_file,omitempty"`
+}
+
 // Config is the root configuration.
 type Config struct {
+	Defaults  Defaults         `yaml:"defaults"`
 	Monitors  []MonitorConfig  `yaml:"monitors"`
 	Notifiers []NotifierConfig `yaml:"notifiers"`
 }
 
 // MonitorConfig holds a single monitor's configuration.
 type MonitorConfig struct {
-	Name          string `yaml:"name"`
-	Type          string `yaml:"type"`
-	Target        string `yaml:"target"`
-	Interval      int    `yaml:"interval"`
-	AlertInterval int    `yaml:"alert_interval"`
-	Enabled       bool   `yaml:"enabled"`
+	Name    string `yaml:"name"`
+	Type    string `yaml:"type"`
+	Target  string `yaml:"target,omitempty"`
+	Enabled *bool  `yaml:"enabled,omitempty"`
+
+	Interval      int `yaml:"interval,omitempty"`
+	AlertInterval int `yaml:"alert_interval,omitempty"`
+
+	URL     string  `yaml:"url,omitempty"`
+	Keyword string  `yaml:"keyword,omitempty"`
+	Host    string  `yaml:"host,omitempty"`
+	Port    string  `yaml:"port,omitempty"`
+	DSN     string  `yaml:"dsn,omitempty"`
+	Path    string  `yaml:"path,omitempty"`
+	Warn    float64 `yaml:"warn,omitempty"`
+	Crit    float64 `yaml:"crit,omitempty"`
+
+	ProcessName   string `yaml:"process_name,omitempty"`
+	ContainerName string `yaml:"container_name,omitempty"`
+	Password      string `yaml:"password,omitempty"`
+
+	SSH *SSHConfig `yaml:"ssh,omitempty"`
 }
 
 // NotifierConfig holds a single notifier's configuration.
 type NotifierConfig struct {
-	Name    string            `yaml:"name"`
-	Type    string            `yaml:"type"`
-	Webhook string            `yaml:"webhook"`
-	Enabled bool              `yaml:"enabled"`
-	Extra   map[string]string `yaml:"extra,omitempty"`
+	Name    string `yaml:"name"`
+	Type    string `yaml:"type"`
+	Webhook string `yaml:"webhook,omitempty"`
+	Enabled *bool  `yaml:"enabled,omitempty"`
+
+	CorpID  string `yaml:"corp_id,omitempty"`
+	AgentID string `yaml:"agent_id,omitempty"`
+	Secret  string `yaml:"secret,omitempty"`
+	ToUsers string `yaml:"to_users,omitempty"`
 }
 
 // Load reads a YAML config file.
@@ -44,22 +81,35 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("parse config: %w", err)
 	}
 
-	// Set defaults
+	d := cfg.Defaults
+	if d.Interval <= 0 {
+		d.Interval = 60
+	}
+	if d.AlertInterval <= 0 {
+		d.AlertInterval = 300
+	}
+	if !d.Enabled {
+		d.Enabled = true
+	}
+
 	for i := range cfg.Monitors {
-		if cfg.Monitors[i].Interval <= 0 {
-			cfg.Monitors[i].Interval = 60
+		m := &cfg.Monitors[i]
+		if m.Interval <= 0 {
+			m.Interval = d.Interval
 		}
-		if cfg.Monitors[i].AlertInterval <= 0 {
-			cfg.Monitors[i].AlertInterval = 300
+		if m.AlertInterval <= 0 {
+			m.AlertInterval = d.AlertInterval
 		}
-		if !cfg.Monitors[i].Enabled {
-			cfg.Monitors[i].Enabled = true
+		if m.Enabled == nil {
+			enable := d.Enabled
+			m.Enabled = &enable
 		}
 	}
 
 	for i := range cfg.Notifiers {
-		if !cfg.Notifiers[i].Enabled {
-			cfg.Notifiers[i].Enabled = true
+		if cfg.Notifiers[i].Enabled == nil {
+			v := true
+			cfg.Notifiers[i].Enabled = &v
 		}
 	}
 
@@ -78,22 +128,22 @@ func Save(path string, cfg *Config) error {
 // DefaultConfig returns a sample configuration.
 func DefaultConfig() *Config {
 	return &Config{
+		Defaults: Defaults{
+			Interval:      60,
+			AlertInterval: 300,
+		},
 		Monitors: []MonitorConfig{
 			{
-				Name:          "官网",
-				Type:          "http",
-				Target:        "https://example.com",
-				Interval:      60,
-				AlertInterval: 300,
-				Enabled:       true,
+				Name: "官网",
+				Type: "http",
+				URL:  "https://example.com",
 			},
 		},
 		Notifiers: []NotifierConfig{
 			{
-				Name:    "运维群",
+				Name:    "通知群",
 				Type:    "wechat",
 				Webhook: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY",
-				Enabled: true,
 			},
 		},
 	}

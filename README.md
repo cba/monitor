@@ -9,7 +9,7 @@ A lightweight service monitoring tool with multiple monitor types and notificati
 - **12 monitor types**: HTTP/HTTPS, TCP port, ICMP Ping, SSL certificate, HTTP keyword, MySQL, Redis, CPU load, Memory, Disk, Process, Docker container
 - **3 notification channels**: WeChat Work Webhook, WeChat Work App API, DingTalk
 - **Hot reload**: Auto-reload on config file changes, no restart needed
-- **Independent config**: Per-monitor check interval and alert interval
+- **Global defaults**: Per-monitor intervals optional, inherit from defaults
 - **Plugin architecture**: Easy to extend with new monitor types and notification channels
 
 ## Installation
@@ -92,20 +92,35 @@ monitor notifier types
 ### Example Config
 
 ```yaml
+defaults:
+  interval: 60
+  alert_interval: 300
+
 monitors:
   - name: example.com
     type: http
-    target: https://example.com
-    interval: 60
-    alert_interval: 300
-    enabled: true
+    url: https://example.com
+
+  - name: Redis
+    type: redis
+    host: 127.0.0.1
+    port: "6379"
+    interval: 30
+    alert_interval: 120
 
 notifiers:
   - name: ops-team
     type: wechat
     webhook: https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY
-    enabled: true
 ```
+
+### Defaults
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| interval | int | 60 | Default check interval (seconds) |
+| alert_interval | int | 300 | Default alert interval (seconds) |
+| enabled | bool | true | Default enabled state |
 
 ### Monitor Config
 
@@ -113,10 +128,26 @@ notifiers:
 |-------|------|----------|-------------|
 | name | string | Yes | Monitor name (unique identifier) |
 | type | string | Yes | Monitor type |
-| target | string | Yes | Monitor target |
-| interval | int | No | Check interval in seconds, default 60 |
-| alert_interval | int | No | Alert interval in seconds, default 300 |
 | enabled | bool | No | Enable monitor, default true |
+| interval | int | No | Check interval (seconds), inherits from defaults |
+| alert_interval | int | No | Alert interval (seconds), inherits from defaults |
+| url | string | HTTP/Keyword | URL to monitor |
+| keyword | string | Keyword | Keyword to search for |
+| host | string | TCP/SSL/Redis/ICMP(remote) | Host address |
+| port | string | TCP/SSL/Redis | Port number |
+| target | string | ICMP | IP address or hostname |
+| dsn | string | MySQL | MySQL DSN string |
+| path | string | Disk | Mount point (default `/`) |
+| warn | float64 | CPU/Memory/Disk | Warning threshold |
+| crit | float64 | CPU/Memory/Disk | Critical threshold |
+| process_name | string | Process | Process name to check |
+| container_name | string | Container | Docker container name |
+| password | string | Redis | Redis password |
+| ssh.host | string | Remote monitors | SSH jump host (defaults to `host`) |
+| ssh.user | string | Remote monitors | SSH username |
+| ssh.password | string | Remote monitors | SSH password |
+| ssh.key_file | string | Remote monitors | SSH private key path |
+| ssh.cert_file | string | Remote monitors | SSH certificate path |
 
 ### Notifier Config
 
@@ -124,9 +155,12 @@ notifiers:
 |-------|------|----------|-------------|
 | name | string | Yes | Notifier name |
 | type | string | Yes | Notifier type (wechat/wechat_app/dingtalk) |
-| webhook | string | No | Webhook URL (required for wechat/dingtalk) |
+| webhook | string | Webhook URL (required for wechat/dingtalk) |
 | enabled | bool | No | Enable notifier, default true |
-| extra | map | No | Additional params (required for wechat_app, see below) |
+| corp_id | string | wechat_app | Corp ID |
+| agent_id | string | wechat_app | Application AgentId |
+| secret | string | wechat_app | Application Secret |
+| to_users | string | wechat_app | Recipient UserIDs, separated by `\|`, `@all` for everyone |
 
 ## Monitor Types
 
@@ -137,12 +171,10 @@ Monitor if a webpage is accessible.
 ```yaml
 - name: example.com
   type: http
-  target: https://example.com
-  interval: 60
-  alert_interval: 300
+  url: https://example.com
 ```
 
-- **target**: Full URL (must include http:// or https://)
+- **url**: Full URL (must include http:// or https://)
 - **Status**: 2xx/3xx = up, otherwise down
 
 ### TCP Port
@@ -152,12 +184,12 @@ Monitor if a TCP port is reachable.
 ```yaml
 - name: Redis
   type: tcp
-  target: 192.168.1.100:6379
-  interval: 30
-  alert_interval: 120
+  host: 192.168.1.100
+  port: "6379"
 ```
 
-- **target**: `host:port` format
+- **host**: IP address or hostname
+- **port**: Port number
 - **Status**: Connection success = up
 
 ### ICMP Ping
@@ -165,14 +197,23 @@ Monitor if a TCP port is reachable.
 Monitor if a server is reachable.
 
 ```yaml
+# Local
 - name: Server Alive
   type: icmp
   target: 192.168.1.1
-  interval: 60
-  alert_interval: 300
+
+# Remote (ping via SSH)
+- name: Remote Server Alive
+  type: icmp
+  target: 192.168.1.1
+  ssh:
+    user: root
+    host: 192.168.1.100
+    key_file: /root/.ssh/id_rsa
 ```
 
 - **target**: IP address or hostname
+- **ssh.host**: SSH jump host (required for remote monitoring)
 - **Status**: Ping success = up
 
 ### SSL Certificate
@@ -182,12 +223,14 @@ Monitor if an SSL certificate is valid.
 ```yaml
 - name: SSL Cert
   type: ssl
-  target: example.com:443
+  host: example.com
+  port: "443"
   interval: 3600
   alert_interval: 86400
 ```
 
-- **target**: `domain:port` format, port defaults to 443
+- **host**: Domain name
+- **port**: Port number (default 443)
 - **Status**:
   - up: Valid certificate with > 7 days remaining
   - warning: Valid certificate with <= 7 days remaining
@@ -200,12 +243,12 @@ Monitor if a webpage contains a specific keyword.
 ```yaml
 - name: Homepage Keyword
   type: keyword
-  target: "https://example.com|Hello World"
-  interval: 120
-  alert_interval: 600
+  url: https://example.com
+  keyword: Hello World
 ```
 
-- **target**: `URL|keyword` format (separated by `|`)
+- **url**: URL to check
+- **keyword**: Keyword to search for in response body
 - **Status**: Response body contains keyword = up
 
 ### MySQL
@@ -213,14 +256,23 @@ Monitor if a webpage contains a specific keyword.
 Monitor MySQL database connectivity.
 
 ```yaml
+# Local
 - name: MySQL
   type: mysql
-  target: "user:password@tcp(127.0.0.1:3306)/mydb"
-  interval: 60
-  alert_interval: 300
+  dsn: "user:password@tcp(127.0.0.1:3306)/mydb"
+
+# Remote (SSH jump host differs from DSN host)
+- name: Remote MySQL
+  type: mysql
+  dsn: "user:password@tcp(10.0.0.5:3306)/mydb"
+  ssh:
+    user: root
+    host: 124.223.224.4
+    key_file: /root/.ssh/id_rsa
 ```
 
-- **target**: MySQL DSN format
+- **dsn**: MySQL DSN format (`user:password@tcp(host:port)/dbname`)
+- **ssh.host**: SSH jump host (required when different from DSN host)
 - **Status**: Connection success = up
 
 ### Redis
@@ -228,14 +280,35 @@ Monitor MySQL database connectivity.
 Monitor Redis service connectivity.
 
 ```yaml
+# Local
 - name: Redis
   type: redis
-  target: 127.0.0.1:6379
-  interval: 30
-  alert_interval: 120
+  host: 127.0.0.1
+  port: "6379"
+
+# Local (with password)
+- name: Redis
+  type: redis
+  host: 127.0.0.1
+  port: "6379"
+  password: your_password
+
+# Remote (SSH jump host differs from Redis host)
+- name: Remote Redis
+  type: redis
+  host: 10.0.0.5
+  port: "6379"
+  password: your_password
+  ssh:
+    user: root
+    host: 124.223.224.4
+    key_file: /root/.ssh/id_rsa
 ```
 
-- **target**: `host:port` format
+- **host**: Redis server address
+- **port**: Port number
+- **password**: Redis password (omit if none)
+- **ssh.host**: SSH jump host (required when different from `host`)
 - **Status**: PING command success = up
 
 ### CPU Load
@@ -243,62 +316,114 @@ Monitor Redis service connectivity.
 Monitor server CPU load average.
 
 ```yaml
+# Local
 - name: Server CPU
   type: cpu_load
-  target: cpu_load
-  interval: 60
-  alert_interval: 300
+  warn: 5
+  crit: 10
+
+# Remote (password auth)
+- name: Remote CPU
+  type: cpu_load
+  host: 192.168.1.100
+  warn: 5
+  crit: 10
+  ssh:
+    user: root
+    password: your_password
+
+# Remote (key auth)
+- name: Remote CPU (key)
+  type: cpu_load
+  host: 192.168.1.100
+  warn: 5
+  crit: 10
+  ssh:
+    user: root
+    key_file: /root/.ssh/id_rsa
 ```
 
-- **target**: `cpu_load` or `user:pass@host,cpu_load[,warning,critical]`
+- **warn**: Warning threshold (default 5.0)
+- **crit**: Critical threshold (default 10.0)
+- **ssh**: SSH config for remote monitoring (optional)
 - **Status**: 1-min load average below warning = up, above = warning, above critical = down
-- **Defaults**: warning=5.0, critical=10.0
 
 ### Memory Usage
 
 Monitor server memory usage.
 
 ```yaml
+# Local
 - name: Server Memory
   type: memory
-  target: memory
-  interval: 60
-  alert_interval: 300
+  warn: 80
+  crit: 90
+
+# Remote
+- name: Remote Memory
+  type: memory
+  host: 192.168.1.100
+  warn: 80
+  crit: 90
+  ssh:
+    user: root
+    key_file: /root/.ssh/id_rsa
 ```
 
-- **target**: `memory` or `user:pass@host,memory[,warning,critical]`
+- **warn**: Warning threshold (default 80%)
+- **crit**: Critical threshold (default 90%)
 - **Status**: Usage below warning = up, above = warning, above critical = down
-- **Defaults**: warning=80%, critical=90%
 
 ### Disk Usage
 
 Monitor disk partition usage.
 
 ```yaml
+# Local
 - name: Root Partition
   type: disk
-  target: "disk,/,80,90"
-  interval: 300
-  alert_interval: 600
+  path: /
+  warn: 80
+  crit: 90
+
+# Remote
+- name: Remote Disk
+  type: disk
+  host: 192.168.1.100
+  path: /
+  warn: 80
+  crit: 90
+  ssh:
+    user: root
+    key_file: /root/.ssh/id_rsa
 ```
 
-- **target**: `disk,mountpoint[,warning,critical]` or `user:pass@host,disk,mountpoint[,warning,critical]`
+- **path**: Mount point (default `/`)
+- **warn**: Warning threshold (default 80%)
+- **crit**: Critical threshold (default 90%)
 - **Status**: Usage below warning = up, above = warning, above critical = down
-- **Defaults**: warning=80%, critical=90%
 
 ### Process Alive
 
 Monitor if a specific process is running.
 
 ```yaml
+# Local
 - name: Nginx Process
   type: process
-  target: "process,nginx"
-  interval: 30
-  alert_interval: 120
+  process_name: nginx
+
+# Remote
+- name: Remote Nginx
+  type: process
+  host: 192.168.1.100
+  process_name: nginx
+  ssh:
+    user: root
+    key_file: /root/.ssh/id_rsa
 ```
 
-- **target**: `process,name` or `user:pass@host,process,name`
+- **process_name**: Name of the process to check
 - **Status**: Process exists = up, not found = down
 
 ### Docker Container
@@ -306,14 +431,22 @@ Monitor if a specific process is running.
 Monitor if a Docker container is running.
 
 ```yaml
+# Local
 - name: Redis Container
   type: container
-  target: "container,redis"
-  interval: 60
-  alert_interval: 300
+  container_name: redis
+
+# Remote
+- name: Remote Redis Container
+  type: container
+  host: 192.168.1.100
+  container_name: redis
+  ssh:
+    user: root
+    key_file: /root/.ssh/id_rsa
 ```
 
-- **target**: `container,name` or `user:pass@host,container,name`
+- **container_name**: Docker container name
 - **Status**: Container running = up, stopped or not found = down
 
 ## Notification Channels
@@ -337,15 +470,11 @@ Send notifications via WeChat Work application message API with recipient suppor
 ```yaml
 - name: ops-notify
   type: wechat_app
-  enabled: true
-  extra:
-    corp_id: YOUR_CORP_ID
-    agent_id: YOUR_AGENT_ID
-    secret: YOUR_SECRET
-    to_users: "UserID1|UserID2"
+  corp_id: YOUR_CORP_ID
+  agent_id: YOUR_AGENT_ID
+  secret: YOUR_SECRET
+  to_users: "UserID1|UserID2"
 ```
-
-**extra fields:**
 
 | Field | Required | Description |
 |-------|----------|-------------|
@@ -401,19 +530,19 @@ package monitor
 
 import (
     "context"
-    "github.com/cba/monitor/internal/monitor"
+    "github.com/cba/monitor/internal/config"
 )
 
 type yourMonitor struct{}
 
 func init() {
-    monitor.Register(&yourMonitor{})
+    Register(&yourMonitor{})
 }
 
 func (m *yourMonitor) Name() string { return "your_type" }
 
-func (m *yourMonitor) Check(ctx context.Context, target string) (*monitor.Result, error) {
-    return &monitor.Result{
+func (m *yourMonitor) Check(ctx context.Context, cfg *config.MonitorConfig) (*Result, error) {
+    return &Result{
         Status:    "up",
         Message:   "OK",
         Latency:   100 * time.Millisecond,

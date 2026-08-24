@@ -1,130 +1,171 @@
 # Monitor 配置文件
 
+defaults:
+  interval: 60
+  alert_interval: 300
+
 monitors:
   # HTTP/HTTPS 网址监控
   - name: 官网
     type: http
-    target: https://example.com
-    interval: 60          # 检查间隔（秒）
-    alert_interval: 300   # 报警间隔（秒）
-    enabled: true
+    url: https://example.com
 
   # TCP 端口监控
   - name: Redis服务
     type: tcp
-    target: 192.168.1.100:6379
+    host: 192.168.1.100
+    port: "6379"
     interval: 30
     alert_interval: 120
-    enabled: true
 
   # ICMP Ping 监控
   - name: 服务器存活
     type: icmp
     target: 192.168.1.1
-    interval: 60
-    alert_interval: 300
-    enabled: true
+
+  # ICMP Ping 监控（远程 - 通过 SSH 执行）
+  - name: 远程服务器存活
+    type: icmp
+    target: 192.168.1.1
+    ssh:
+      user: root
+      host: 192.168.1.100
+      key_file: /root/.ssh/id_rsa
+      enabled: false
 
   # HTTPS 证书监控
   - name: SSL证书
     type: ssl
-    target: example.com:443
-    interval: 3600        # 每小时检查一次
-    alert_interval: 86400 # 每天报警一次
-    enabled: true
+    host: example.com
+    port: "443"
+    interval: 3600
+    alert_interval: 86400
 
   # HTTP 关键字监控
   - name: 首页关键词
     type: keyword
-    target: "https://example.com|Hello"
+    url: https://example.com
+    keyword: Hello
     interval: 120
     alert_interval: 600
-    enabled: true
 
   # MySQL 监控
   - name: MySQL数据库
     type: mysql
-    target: "user:password@tcp(127.0.0.1:3306)/mydb"
-    interval: 60
-    alert_interval: 300
-    enabled: true
+    dsn: "user:password@tcp(127.0.0.1:3306)/mydb"
+
+  # MySQL 监控（远程 - SSH 跳板机）
+  - name: 远程MySQL
+    type: mysql
+    dsn: "user:password@tcp(10.0.0.5:3306)/mydb"
+    ssh:
+      user: root
+      host: 192.168.1.100
+      key_file: /root/.ssh/id_rsa
+    enabled: false
 
   # Redis 监控
   - name: Redis服务
     type: redis
-    target: 127.0.0.1:6379
+    host: 127.0.0.1
+    port: "6379"
     interval: 30
     alert_interval: 120
-    enabled: true
+
+  # Redis 监控（远程 - SSH 跳板机）
+  - name: 远程Redis
+    type: redis
+    host: 10.0.0.5
+    port: "6379"
+    password: your_password
+    ssh:
+      user: root
+      host: 192.168.1.100
+      key_file: /root/.ssh/id_rsa
+    enabled: false
 
   # CPU 负载监控（本机）
   - name: 服务器CPU
     type: cpu_load
-    target: cpu_load
-    interval: 60
-    alert_interval: 300
-    enabled: true
+    warn: 5
+    crit: 10
 
-  # CPU 负载监控（远程）
+  # CPU 负载监控（远程 - 密码认证）
   - name: 远程服务器CPU
     type: cpu_load
-    target: "root:password@192.168.1.100,cpu_load,5,10"
-    interval: 60
-    alert_interval: 300
-    enabled: true
+    host: 192.168.1.100
+    warn: 5
+    crit: 10
+    ssh:
+      user: root
+      password: your_password
+
+  # CPU 负载监控（远程 - 公钥认证）
+  - name: 远程服务器CPU（密钥）
+    type: cpu_load
+    host: 192.168.1.100
+    warn: 5
+    crit: 10
+    ssh:
+      user: root
+      key_file: /root/.ssh/id_rsa
+    enabled: false
+
+  # CPU 负载监控（远程 - 证书认证）
+  - name: 远程服务器CPU（证书）
+    type: cpu_load
+    host: 192.168.1.100
+    warn: 5
+    crit: 10
+    ssh:
+      user: root
+      key_file: /root/.ssh/id_ed25519
+      cert_file: /root/.ssh/id_ed25519-cert.pub
+    enabled: false
 
   # 内存监控
   - name: 服务器内存
     type: memory
-    target: memory
-    interval: 60
-    alert_interval: 300
-    enabled: true
+    warn: 80
+    crit: 90
 
   # 磁盘监控
   - name: 根分区
     type: disk
-    target: "disk,/,80,90"
+    path: /
+    warn: 80
+    crit: 90
     interval: 300
     alert_interval: 600
-    enabled: true
 
   # 进程监控
   - name: Nginx进程
     type: process
-    target: "process,nginx"
+    process_name: nginx
     interval: 30
     alert_interval: 120
-    enabled: true
 
   # Docker容器监控
   - name: Redis容器
     type: container
-    target: "container,redis"
-    interval: 60
-    alert_interval: 300
-    enabled: true
+    container_name: redis
 
 # 通知渠道
 notifiers:
   # 企业微信
-  - name: 运维群
+  - name: 通知群
     type: wechat
     webhook: https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY
-    enabled: true
 
   # 企业微信应用消息
   - name: 运维通知
     type: wechat_app
-    enabled: true
-    extra:
-      corp_id: YOUR_CORP_ID
-      agent_id: YOUR_AGENT_ID
-      secret: YOUR_SECRET
-      to_users: "UserID1|UserID2"  # 多个用户用 | 分隔，@all 发送给所有人
+    corp_id: YOUR_CORP_ID
+    agent_id: YOUR_AGENT_ID
+    secret: YOUR_SECRET
+    to_users: "UserID1|UserID2"  # 多个用户用 | 分隔，@all 发送给所有人
 
   # 钉钉
   - name: 钉钉群
     type: dingtalk
     webhook: https://oapi.dingtalk.com/robot/send?access_token=YOUR_TOKEN
-    enabled: true

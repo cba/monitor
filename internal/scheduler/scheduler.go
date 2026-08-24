@@ -89,7 +89,7 @@ func (s *Scheduler) Reload(cfg *config.Config) {
 	newSet := make(map[string]*config.MonitorConfig)
 	for i := range cfg.Monitors {
 		m := &cfg.Monitors[i]
-		if m.Enabled {
+		if m.Enabled == nil || *m.Enabled {
 			newSet[m.Name] = m
 		}
 	}
@@ -107,8 +107,27 @@ func (s *Scheduler) Reload(cfg *config.Config) {
 	for name, m := range newSet {
 		if r, ok := s.monitors[name]; ok {
 			// Monitor exists - check if config changed
-			if r.config.Type == m.Type && r.config.Target == m.Target &&
-				r.config.Interval == m.Interval && r.config.AlertInterval == m.AlertInterval {
+			boolChanged := func(a, b *bool) bool {
+				if a == nil && b == nil {
+					return false
+				}
+				if a == nil || b == nil {
+					return true
+				}
+				return *a != *b
+			}
+			if r.config.Type == m.Type &&
+				r.config.URL == m.URL &&
+				r.config.Host == m.Host &&
+				r.config.Port == m.Port &&
+				r.config.Keyword == m.Keyword &&
+				r.config.DSN == m.DSN &&
+				r.config.Path == m.Path &&
+				r.config.ProcessName == m.ProcessName &&
+				r.config.ContainerName == m.ContainerName &&
+				r.config.Interval == m.Interval &&
+				r.config.AlertInterval == m.AlertInterval &&
+				!boolChanged(r.config.Enabled, m.Enabled) {
 				continue // No change, skip
 			}
 			// Config changed, restart
@@ -155,7 +174,7 @@ func (s *Scheduler) checkAndAlert(ctx context.Context, m *config.MonitorConfig) 
 		return
 	}
 
-	result, err := mon.Check(ctx, m.Target)
+	result, err := mon.Check(ctx, m)
 	if err != nil {
 		log.Printf("[%s] %s: check error: %v", m.Type, m.Name, err)
 		return
@@ -209,7 +228,7 @@ func (s *Scheduler) sendAlert(ctx context.Context, m *config.MonitorConfig, resu
 	s.alertMu.Unlock()
 
 	title := fmt.Sprintf("🔴 监控报警: %s", m.Name)
-	content := fmt.Sprintf("🔴 监控报警\n- 名称：%s\n- 类型：%s\n- 状态：%s\n- 时间：%s\n- 详情：%s",
+	content := fmt.Sprintf("🔴 监控报警\n名称：%s\n类型：%s\n状态：%s\n时间：%s\n详情：%s",
 		m.Name, m.Type, result.Status, time.Now().Format("2006-01-02 15:04:05"), result.Message)
 
 	s.notifyAll(ctx, title, content)
@@ -221,7 +240,7 @@ func (s *Scheduler) sendRecovery(ctx context.Context, m *config.MonitorConfig, r
 	s.alertMu.Unlock()
 
 	title := fmt.Sprintf("🟢 监控恢复: %s", m.Name)
-	content := fmt.Sprintf("🟢 监控恢复\n- 名称：%s\n- 类型：%s\n- 状态：up\n- 时间：%s\n- 详情：%s",
+	content := fmt.Sprintf("🟢 监控恢复\n名称：%s\n类型：%s\n状态：up\n时间：%s\n详情：%s",
 		m.Name, m.Type, time.Now().Format("2006-01-02 15:04:05"), result.Message)
 
 	s.notifyAll(ctx, title, content)
@@ -233,7 +252,7 @@ func (s *Scheduler) notifyAll(ctx context.Context, title, content string) {
 	s.notifierMu.RUnlock()
 
 	for _, nc := range notifiers {
-		if !nc.Enabled {
+		if nc.Enabled != nil && !*nc.Enabled {
 			continue
 		}
 
@@ -242,12 +261,7 @@ func (s *Scheduler) notifyAll(ctx context.Context, title, content string) {
 		case "wechat":
 			n = notifier.NewWeChatNotifier(nc.Webhook)
 		case "wechat_app":
-			n = notifier.NewWeChatAppNotifier(
-				nc.Extra["corp_id"],
-				nc.Extra["agent_id"],
-				nc.Extra["secret"],
-				nc.Extra["to_users"],
-			)
+			n = notifier.NewWeChatAppNotifier(nc.CorpID, nc.AgentID, nc.Secret, nc.ToUsers)
 		case "dingtalk":
 			n = notifier.NewDingTalkNotifier(nc.Webhook)
 		default:

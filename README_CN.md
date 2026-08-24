@@ -9,7 +9,7 @@
 - **12 种监控类型**：HTTP/HTTPS、TCP 端口、ICMP Ping、SSL 证书、HTTP 关键字、MySQL、Redis、CPU 负载、内存使用率、磁盘使用率、进程存活、Docker 容器
 - **3 种通知渠道**：企业微信 Webhook、企业微信应用消息、钉钉
 - **热更新**：修改配置文件后自动重载，无需重启
-- **独立配置**：每个监控项独立设置检查间隔和报警间隔
+- **全局默认值**：监控项可继承全局 interval/alert_interval 配置
 - **插件架构**：易于扩展新的监控类型和通知渠道
 
 ## 安装
@@ -92,20 +92,35 @@ monitor notifier types
 ### 配置示例
 
 ```yaml
+defaults:
+  interval: 60
+  alert_interval: 300
+
 monitors:
   - name: 官网
     type: http
-    target: https://example.com
-    interval: 60
-    alert_interval: 300
-    enabled: true
+    url: https://example.com
+
+  - name: 通知群is服务
+    type: redis
+    host: 127.0.0.1
+    port: "6379"
+    interval: 30
+    alert_interval: 120
 
 notifiers:
   - name: 运维群
     type: wechat
     webhook: https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY
-    enabled: true
 ```
+
+### 全局默认值
+
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| interval | int | 60 | 默认检查间隔（秒） |
+| alert_interval | int | 300 | 默认报警间隔（秒） |
+| enabled | bool | true | 默认启用状态 |
 
 ### 监控配置
 
@@ -113,20 +128,39 @@ notifiers:
 |------|------|------|------|
 | name | string | 是 | 监控名称（唯一标识） |
 | type | string | 是 | 监控类型 |
-| target | string | 是 | 监控目标 |
-| interval | int | 否 | 检查间隔（秒），默认 60 |
-| alert_interval | int | 否 | 报警间隔（秒），默认 300 |
 | enabled | bool | 否 | 是否启用，默认 true |
+| interval | int | 否 | 检查间隔（秒），继承全局默认值 |
+| alert_interval | int | 否 | 报警间隔（秒），继承全局默认值 |
+| url | string | HTTP/Keyword | 监控 URL |
+| keyword | string | Keyword | 关键字 |
+| host | string | TCP/SSL/Redis/ICMP(remote) | 主机地址 |
+| port | string | TCP/SSL/Redis | 端口号 |
+| target | string | ICMP | IP 地址或域名 |
+| dsn | string | MySQL | MySQL DSN 字符串 |
+| path | string | 磁盘 | 挂载点（默认 `/`） |
+| warn | float64 | CPU/内存/磁盘 | 警告阈值 |
+| crit | float64 | CPU/内存/磁盘 | 严重阈值 |
+| process_name | string | 进程 | 进程名称 |
+| container_name | string | 容器 | Docker 容器名称 |
+| password | string | Redis | Redis 密码 |
+| ssh.host | string | 远程监控 | SSH 跳板机地址（默认用 `host`） |
+| ssh.user | string | 远程监控 | SSH 用户名 |
+| ssh.password | string | 远程监控 | SSH 密码 |
+| ssh.key_file | string | 远程监控 | SSH 私钥路径 |
+| ssh.cert_file | string | 远程监控 | SSH 证书路径 |
 
 ### 通知配置
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | name | string | 是 | 通知渠道名称 |
-| type | string | 是 | 通知类型（wechat/dingtalk） |
+| type | string | 是 | 通知类型（wechat/wechat_app/dingtalk） |
 | webhook | string | 否 | Webhook URL（wechat/dingtalk 必填） |
 | enabled | bool | 否 | 是否启用，默认 true |
-| extra | map | 否 | 附加参数（wechat_app 必填，见下方说明） |
+| corp_id | string | wechat_app | 企业 ID |
+| agent_id | string | wechat_app | 应用 AgentId |
+| secret | string | wechat_app | 应用 Secret |
+| to_users | string | wechat_app | 接收人 UserID，多个用 `\|` 分隔，`@all` 发送所有人 |
 
 ## 监控类型
 
@@ -137,12 +171,10 @@ notifiers:
 ```yaml
 - name: 官网
   type: http
-  target: https://example.com
-  interval: 60
-  alert_interval: 300
+  url: https://example.com
 ```
 
-- **target**：完整的 URL（包含 http:// 或 https://）
+- **url**：完整的 URL（包含 http:// 或 https://）
 - **判断标准**：状态码 2xx/3xx 为 up，其他为 down
 
 ### TCP 端口
@@ -152,12 +184,12 @@ notifiers:
 ```yaml
 - name: Redis服务
   type: tcp
-  target: 192.168.1.100:6379
-  interval: 30
-  alert_interval: 120
+  host: 192.168.1.100
+  port: "6379"
 ```
 
-- **target**：`host:port` 格式
+- **host**：IP 地址或域名
+- **port**：端口号
 - **判断标准**：TCP 连接成功为 up
 
 ### ICMP Ping
@@ -165,14 +197,23 @@ notifiers:
 监控服务器是否可达。
 
 ```yaml
+# 本机
 - name: 服务器存活
   type: icmp
   target: 192.168.1.1
-  interval: 60
-  alert_interval: 300
+
+# 远程（通过 SSH 执行 ping）
+- name: 远程服务器存活
+  type: icmp
+  target: 192.168.1.1
+  ssh:
+    user: root
+    host: 192.168.1.100
+    key_file: /root/.ssh/id_rsa
 ```
 
 - **target**：IP 地址或域名
+- **ssh.host**：SSH 跳板机地址（远程监控时必填）
 - **判断标准**：ping 成功为 up
 
 ### HTTPS 证书
@@ -182,12 +223,14 @@ notifiers:
 ```yaml
 - name: SSL证书
   type: ssl
-  target: example.com:443
+  host: example.com
+  port: "443"
   interval: 3600
   alert_interval: 86400
 ```
 
-- **target**：`域名:端口` 格式，端口默认 443
+- **host**：域名
+- **port**：端口号（默认 443）
 - **判断标准**：
   - up：证书有效且剩余有效期 > 7 天
   - warning：证书有效但剩余有效期 ≤ 7 天
@@ -200,12 +243,12 @@ notifiers:
 ```yaml
 - name: 首页关键词
   type: keyword
-  target: "https://example.com|Hello World"
-  interval: 120
-  alert_interval: 600
+  url: https://example.com
+  keyword: Hello World
 ```
 
-- **target**：`URL|关键字` 格式（用 `|` 分隔）
+- **url**：监控 URL
+- **keyword**：要搜索的关键字
 - **判断标准**：响应体包含关键字为 up
 
 ### MySQL
@@ -213,14 +256,23 @@ notifiers:
 监控 MySQL 数据库连接。
 
 ```yaml
+# 本机
 - name: MySQL数据库
   type: mysql
-  target: "user:password@tcp(127.0.0.1:3306)/mydb"
-  interval: 60
-  alert_interval: 300
+  dsn: "user:password@tcp(127.0.0.1:3306)/mydb"
+
+# 远程（SSH 跳板机与 DSN 中 host 不同）
+- name: 远程MySQL
+  type: mysql
+  dsn: "user:password@tcp(10.0.0.5:3306)/mydb"
+  ssh:
+    user: root
+    host: 124.223.224.4
+    key_file: /root/.ssh/id_rsa
 ```
 
-- **target**：MySQL DSN 格式
+- **dsn**：MySQL DSN 格式（`user:password@tcp(host:port)/dbname`）
+- **ssh.host**：SSH 跳板机地址（与 DSN 中 host 不同时必填）
 - **判断标准**：连接成功为 up
 
 ### Redis
@@ -228,14 +280,35 @@ notifiers:
 监控 Redis 服务连接。
 
 ```yaml
+# 本机
 - name: Redis服务
   type: redis
-  target: 127.0.0.1:6379
-  interval: 30
-  alert_interval: 120
+  host: 127.0.0.1
+  port: "6379"
+
+# 本机（带密码）
+- name: Redis服务
+  type: redis
+  host: 127.0.0.1
+  port: "6379"
+  password: your_password
+
+# 远程（SSH 跳板机与 Redis 地址不同）
+- name: 远程Redis
+  type: redis
+  host: 10.0.0.5
+  port: "6379"
+  password: your_password
+  ssh:
+    user: root
+    host: 124.223.224.4
+    key_file: /root/.ssh/id_rsa
 ```
 
-- **target**：`host:port` 格式
+- **host**：Redis 服务器地址
+- **port**：端口号
+- **password**：Redis 密码（无密码可省略）
+- **ssh.host**：SSH 跳板机地址（与 `host` 不同时必填）
 - **判断标准**：PING 命令成功为 up
 
 ### CPU 负载
@@ -243,62 +316,114 @@ notifiers:
 监控服务器 CPU 负载。
 
 ```yaml
+# 本机
 - name: 服务器CPU
   type: cpu_load
-  target: cpu_load
-  interval: 60
-  alert_interval: 300
+  warn: 5
+  crit: 10
+
+# 远程（密码认证）
+- name: 远程服务器CPU
+  type: cpu_load
+  host: 192.168.1.100
+  warn: 5
+  crit: 10
+  ssh:
+    user: root
+    password: your_password
+
+# 远程（密钥认证）
+- name: 远程服务器CPU（密钥）
+  type: cpu_load
+  host: 192.168.1.100
+  warn: 5
+  crit: 10
+  ssh:
+    user: root
+    key_file: /root/.ssh/id_rsa
 ```
 
-- **target**：`cpu_load` 或 `user:pass@host,cpu_load[,warning,critical]`
+- **warn**：警告阈值（默认 5.0）
+- **crit**：严重阈值（默认 10.0）
+- **ssh**：远程监控的 SSH 配置（可选）
 - **判断标准**：1分钟 load average 低于 warning 为 up，超过为 warning，超过 critical 为 down
-- **默认阈值**：warning=5.0，critical=10.0
 
 ### 内存使用率
 
 监控服务器内存使用率。
 
 ```yaml
+# 本机
 - name: 服务器内存
   type: memory
-  target: memory
-  interval: 60
-  alert_interval: 300
+  warn: 80
+  crit: 90
+
+# 远程
+- name: 远程服务器内存
+  type: memory
+  host: 192.168.1.100
+  warn: 80
+  crit: 90
+  ssh:
+    user: root
+    key_file: /root/.ssh/id_rsa
 ```
 
-- **target**：`memory` 或 `user:pass@host,memory[,warning,critical]`
+- **warn**：警告阈值（默认 80%）
+- **crit**：严重阈值（默认 90%）
 - **判断标准**：使用率低于 warning 为 up，超过为 warning，超过 critical 为 down
-- **默认阈值**：warning=80%，critical=90%
 
-### 磁盘使用率
+### 磁盘使用通知群
 
 监控磁盘分区使用率。
 
 ```yaml
+# 本机
 - name: 根分区
   type: disk
-  target: "disk,/,80,90"
-  interval: 300
-  alert_interval: 600
+  path: /
+  warn: 80
+  crit: 90
+
+# 远程
+- name: 远程服务器磁盘
+  type: disk
+  host: 192.168.1.100
+  path: /
+  warn: 80
+  crit: 90
+  ssh:
+    user: root
+    key_file: /root/.ssh/id_rsa
 ```
 
-- **target**：`disk,mountpoint[,warning,critical]` 或 `user:pass@host,disk,mountpoint[,warning,critical]`
+- **path**：挂载点（默认 `/`）
+- **warn**：警告阈值（默认 80%）
+- **crit**：严重阈值（默认 90%）
 - **判断标准**：使用率低于 warning 为 up，超过为 warning，超过 critical 为 down
-- **默认阈值**：warning=80%，critical=90%
 
 ### 进程存活
 
 监控指定进程是否在运行。
 
 ```yaml
+# 本机
 - name: Nginx进程
   type: process
-  target: "process,nginx"
-  interval: 30
-  alert_interval: 120
+  process_name: nginx
+
+# 远程
+- name: 远程Nginx进程
+  type: process
+  host: 192.168.1.100
+  process_name: nginx
+  ssh:
+    user: root
+    key_file: /root/.ssh/id_rsa
 ```
 
-- **target**：`process,name` 或 `user:pass@host,process,name`
+- **process_name**：进程名称
 - **判断标准**：进程存在为 up，不存在为 down
 
 ### Docker 容器
@@ -306,14 +431,22 @@ notifiers:
 监控 Docker 容器是否在运行。
 
 ```yaml
+# 本机
 - name: Redis容器
   type: container
-  target: "container,redis"
-  interval: 60
-  alert_interval: 300
+  container_name: redis
+
+# 远程
+- name: 远程Redis容器
+  type: container
+  host: 192.168.1.100
+  container_name: redis
+  ssh:
+    user: root
+    key_file: /root/.ssh/id_rsa
 ```
 
-- **target**：`container,name` 或 `user:pass@host,container,name`
+- **container_name**：Docker 容器名称
 - **判断标准**：容器运行中为 up，停止或不存在为 down
 
 ## 通知渠道
@@ -337,15 +470,11 @@ notifiers:
 ```yaml
 - name: 运维通知
   type: wechat_app
-  enabled: true
-  extra:
-    corp_id: YOUR_CORP_ID
-    agent_id: YOUR_AGENT_ID
-    secret: YOUR_SECRET
-    to_users: "UserID1|UserID2"
+  corp_id: YOUR_CORP_ID
+  agent_id: YOUR_AGENT_ID
+  secret: YOUR_SECRET
+  to_users: "UserID1|UserID2"
 ```
-
-**extra 字段说明：**
 
 | 字段 | 必填 | 说明 |
 |------|------|------|
@@ -401,20 +530,19 @@ package monitor
 
 import (
     "context"
-    "github.com/cba/monitor/internal/monitor"
+    "github.com/cba/monitor/internal/config"
 )
 
 type yourMonitor struct{}
 
 func init() {
-    monitor.Register(&yourMonitor{})
+    Register(&yourMonitor{})
 }
 
 func (m *yourMonitor) Name() string { return "your_type" }
 
-func (m *yourMonitor) Check(ctx context.Context, target string) (*monitor.Result, error) {
-    // 实现检查逻辑
-    return &monitor.Result{
+func (m *yourMonitor) Check(ctx context.Context, cfg *config.MonitorConfig) (*Result, error) {
+    return &Result{
         Status:    "up",
         Message:   "OK",
         Latency:   100 * time.Millisecond,
@@ -447,7 +575,6 @@ func NewYourNotifier(webhook string) Notifier {
 func (n *yourNotifier) Name() string { return "your_type" }
 
 func (n *yourNotifier) Send(ctx context.Context, title, content string) error {
-    // 实现发送逻辑
     return nil
 }
 ```

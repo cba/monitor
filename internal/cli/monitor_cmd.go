@@ -28,7 +28,9 @@ var monitorListCmd = &cobra.Command{
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 		fmt.Fprintln(w, "NAME\tTYPE\tTARGET\tINTERVAL\tALERT\tENABLED")
 		for _, m := range cfg.Monitors {
-			fmt.Fprintf(w, "%s\t%s\t%s\t%ds\t%ds\t%v\n", m.Name, m.Type, m.Target, m.Interval, m.AlertInterval, m.Enabled)
+			target := monitorTarget(&m)
+			enabled := m.Enabled != nil && *m.Enabled
+			fmt.Fprintf(w, "%s\t%s\t%s\t%ds\t%ds\t%v\n", m.Name, m.Type, target, m.Interval, m.AlertInterval, enabled)
 		}
 		w.Flush()
 		return nil
@@ -53,7 +55,7 @@ var monitorTestCmd = &cobra.Command{
 					return err
 				}
 
-				result, err := mon.Check(cmd.Context(), m.Target)
+				result, err := mon.Check(cmd.Context(), &m)
 				if err != nil {
 					return err
 				}
@@ -82,4 +84,44 @@ func init() {
 	monitorCmd.AddCommand(monitorTestCmd)
 	monitorCmd.AddCommand(monitorTypesCmd)
 	rootCmd.AddCommand(monitorCmd)
+}
+
+func monitorTarget(m *config.MonitorConfig) string {
+	switch m.Type {
+	case "http", "keyword":
+		return m.URL
+	case "tcp", "redis":
+		if m.Port != "" {
+			return m.Host + ":" + m.Port
+		}
+		return m.Host
+	case "ssl":
+		if m.Port != "" && m.Port != "443" {
+			return m.Host + ":" + m.Port
+		}
+		return m.Host
+	case "mysql":
+		return m.DSN
+	case "icmp":
+		return m.Target
+	case "disk":
+		return m.Path
+	case "cpu_load", "memory":
+		if m.SSH != nil {
+			return m.Host
+		}
+		return "local"
+	case "process":
+		if m.SSH != nil {
+			return m.Host + "/" + m.ProcessName
+		}
+		return m.ProcessName
+	case "container":
+		if m.SSH != nil {
+			return m.Host + "/" + m.ContainerName
+		}
+		return m.ContainerName
+	default:
+		return m.Target
+	}
 }

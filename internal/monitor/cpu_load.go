@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/cba/monitor/internal/config"
 )
 
 type cpuLoadMonitor struct{}
@@ -16,42 +18,32 @@ func init() {
 
 func (m *cpuLoadMonitor) Name() string { return "cpu_load" }
 
-func (m *cpuLoadMonitor) Check(ctx context.Context, target string) (*Result, error) {
-	re, rest := parseTarget(target)
-
-	warnThreshold := 5.0
-	critThreshold := 10.0
-	if parts := strings.Split(rest, ","); len(parts) > 0 && parts[0] == "cpu_load" {
-		if len(parts) > 1 {
-			if v, err := strconv.ParseFloat(parts[1], 64); err == nil {
-				warnThreshold = v
-			}
-		}
-		if len(parts) > 2 {
-			if v, err := strconv.ParseFloat(parts[2], 64); err == nil {
-				critThreshold = v
-			}
-		}
+func (m *cpuLoadMonitor) Check(ctx context.Context, cfg *config.MonitorConfig) (*Result, error) {
+	re := buildRemoteExec(cfg)
+	warn := cfg.Warn
+	if warn == 0 {
+		warn = 5.0
+	}
+	crit := cfg.Crit
+	if crit == 0 {
+		crit = 10.0
 	}
 
-	start := time.Now()
 	out, err := execCommand(ctx, re, `awk '{print $1}' /proc/loadavg`)
-	latency := time.Since(start)
 	if err != nil {
-		return &Result{Status: "down", Message: err.Error(), Latency: latency, Timestamp: time.Now()}, nil
+		return &Result{Status: "down", Message: err.Error(), Latency: 0, Timestamp: time.Now()}, nil
 	}
 
-	load1, err := strconv.ParseFloat(strings.TrimSpace(out), 64)
+	load, err := strconv.ParseFloat(strings.TrimSpace(out), 64)
 	if err != nil {
-		return &Result{Status: "down", Message: fmt.Sprintf("parse error: %s", out), Latency: latency, Timestamp: time.Now()}, nil
+		return nil, fmt.Errorf("parse load: %w", err)
 	}
 
-	msg := fmt.Sprintf("load1: %.2f", load1)
-	if load1 >= critThreshold {
-		return &Result{Status: "down", Message: msg, Latency: latency, Timestamp: time.Now()}, nil
+	if load >= crit {
+		return &Result{Status: "down", Message: fmt.Sprintf("Load %.2f >= %.2f", load, crit), Latency: 0, Timestamp: time.Now()}, nil
 	}
-	if load1 >= warnThreshold {
-		return &Result{Status: "warning", Message: msg, Latency: latency, Timestamp: time.Now()}, nil
+	if load >= warn {
+		return &Result{Status: "warning", Message: fmt.Sprintf("Load %.2f >= %.2f", load, warn), Latency: 0, Timestamp: time.Now()}, nil
 	}
-	return &Result{Status: "up", Message: msg, Latency: latency, Timestamp: time.Now()}, nil
+	return &Result{Status: "up", Message: fmt.Sprintf("Load %.2f", load), Latency: 0, Timestamp: time.Now()}, nil
 }

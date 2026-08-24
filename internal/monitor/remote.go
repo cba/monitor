@@ -6,54 +6,43 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/cba/monitor/internal/config"
 )
 
 type remoteExec struct {
-	User string
-	Pass string
-	Host string
+	User     string
+	Pass     string
+	Host     string
+	KeyPath  string
+	CertPath string
 }
 
-// parseTarget 解析 target 字符串。
-// 格式: "type,params..." 或 "user:pass@host,type,params..."
-func parseTarget(target string) (remoteExec, string) {
-	atIdx := strings.LastIndex(target, "@")
-	if atIdx < 0 {
-		return remoteExec{}, target
+// buildRemoteExec creates remoteExec from MonitorConfig.SSH + Host.
+// ssh.host overrides host when set.
+func buildRemoteExec(cfg *config.MonitorConfig) remoteExec {
+	if cfg.SSH == nil {
+		return remoteExec{}
 	}
-
-	prefix := target[:atIdx]
-	commaIdx := strings.Index(target[atIdx:], ",")
-	if commaIdx < 0 {
-		return remoteExec{}, target
+	sshHost := cfg.Host
+	if cfg.SSH.Host != "" {
+		sshHost = cfg.SSH.Host
 	}
-
-	var user, pass string
-	colonIdx := strings.Index(prefix, ":")
-	if colonIdx < 0 {
-		user = prefix
-	} else {
-		user = prefix[:colonIdx]
-		pass = prefix[colonIdx+1:]
+	return remoteExec{
+		User:     cfg.SSH.User,
+		Pass:     cfg.SSH.Password,
+		Host:     sshHost,
+		KeyPath:  cfg.SSH.KeyFile,
+		CertPath: cfg.SSH.CertFile,
 	}
-
-	hostAndRest := target[atIdx+1:]
-	nextComma := strings.Index(hostAndRest, ",")
-	if nextComma < 0 {
-		return remoteExec{User: user, Pass: pass, Host: hostAndRest}, ""
-	}
-
-	host := hostAndRest[:nextComma]
-	rest := hostAndRest[nextComma+1:]
-	return remoteExec{User: user, Pass: pass, Host: host}, rest
 }
 
-// execCommand 执行命令，本机走 exec.Command，远程走 SSH
+// execCommand executes a command locally or via SSH.
 func execCommand(ctx context.Context, re remoteExec, cmd string) (string, error) {
 	if re.User == "" {
 		return localExec(ctx, cmd)
 	}
-	return sshExec(ctx, re.User, re.Pass, re.Host, cmd)
+	return sshExec(ctx, re, cmd)
 }
 
 func localExec(ctx context.Context, cmd string) (string, error) {

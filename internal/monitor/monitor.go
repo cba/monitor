@@ -3,6 +3,8 @@ package monitor
 import (
 	"context"
 	"time"
+
+	"github.com/cba/monitor/internal/config"
 )
 
 // Result holds the outcome of a monitoring check.
@@ -15,10 +17,6 @@ type Result struct {
 
 // Monitor checks the health of a target.
 type Monitor interface {
-	// Name returns the monitor type identifier (e.g. "http", "tcp").
 	Name() string
-
-	// Check probes the target and returns a Result.
-	// An error is only returned for internal failures, not target-down.
-	Check(ctx context.Context, target string) (*Result, error)
+	Check(ctx context.Context, cfg *config.MonitorConfig) (*Result, error)
 }
