@@ -180,6 +180,19 @@ reporter:
 
 Check results are persisted per day as JSON under `data/reporter/` in the process working directory; the report is sent through all enabled notifiers.
 
+One-switch enable/disable (takes effect via hot reload, no restart needed):
+
+```yaml
+# Enable
+reporter:
+  enabled: true
+  cron: "30 9 * * *"
+
+# Disable (keeps cron etc. for easy re-enable)
+reporter:
+  enabled: false
+```
+
 ## Monitor Types
 
 ### HTTP/HTTPS

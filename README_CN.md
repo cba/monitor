@@ -180,6 +180,19 @@ reporter:
 
 检查结果按天以 JSON 存放在进程工作目录 `data/reporter/` 下；日报复用 `notifiers` 中所有启用的渠道。
 
+一键启用/禁用日报（热更新即时生效，无需重启）：
+
+```yaml
+# 启用
+reporter:
+  enabled: true
+  cron: "30 9 * * *"
+
+# 禁用（保留 cron 等配置以便随时恢复）
+reporter:
+  enabled: false
+```
+
 ## 监控类型
 
 ### HTTP/HTTPS 网址
