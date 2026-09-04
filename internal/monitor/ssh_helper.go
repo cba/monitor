@@ -33,7 +33,7 @@ func sshExec(ctx context.Context, re remoteExec, cmd string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	client, err := ssh.Dial("tcp", host, config)
+	client, err := dialSSH(host, config)
 	if err != nil {
 		return "", fmt.Errorf("ssh dial: %w", err)
 	}
@@ -77,7 +77,19 @@ func newSSHClient(ctx context.Context, re remoteExec) (*ssh.Client, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	return ssh.Dial("tcp", host, sshCfg)
+	return dialSSH(host, sshCfg)
+}
+
+// dialSSH 建立 SSH 连接。握手偶发被 RST 时（sshd 的 MaxStartups 会随机丢弃
+// 并发未认证连接，公网 22 端口的爆破流量会占满这些名额）重试一次，
+// 避免瞬时抖动被当成服务器宕机报警。
+func dialSSH(host string, config *ssh.ClientConfig) (*ssh.Client, error) {
+	client, err := ssh.Dial("tcp", host, config)
+	if err == nil {
+		return client, nil
+	}
+	time.Sleep(time.Second)
+	return ssh.Dial("tcp", host, config)
 }
 
 // sshDial dials targetHost:targetPort through an SSH client.
