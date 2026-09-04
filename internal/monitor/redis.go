@@ -25,14 +25,17 @@ func (m *redisMonitor) Check(ctx context.Context, cfg *config.MonitorConfig) (*R
 	opts := &redis.Options{Addr: addr, Password: cfg.Password}
 
 	if re.User != "" {
-		sshClient, err := newSSHClient(ctx, re)
+		sshClient, err := sshClientFor(ctx, re)
 		if err != nil {
 			return nil, fmt.Errorf("redis ssh: %w", err)
 		}
-		defer sshClient.Close()
 
 		opts.Dialer = func(ctx context.Context, network, addr string) (net.Conn, error) {
-			return sshDial(sshClient, cfg.Host, cfg.Port)
+			conn, err := sshDial(sshClient, cfg.Host, cfg.Port)
+			if err != nil {
+				markSSHBad(re, sshClient)
+			}
+			return conn, err
 		}
 		opts.Addr = ""
 	}

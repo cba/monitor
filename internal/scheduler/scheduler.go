@@ -27,8 +27,9 @@ type Scheduler struct {
 	alertMu    sync.Mutex
 
 	// Reporter for daily reports
-	reporter     *reporter.Reporter
-	reportConfig *config.ReporterConfig
+	reporter        *reporter.Reporter
+	reportConfig    *config.ReporterConfig
+	reporterRunning bool
 }
 
 type monitorRunner struct {
@@ -65,9 +66,6 @@ func (s *Scheduler) StartWithContext(ctx context.Context, ready chan struct{}) {
 	s.mu.Unlock()
 	close(ready) // Signal that context is ready
 
-	// Start reporter scheduler
-	s.startReporterScheduler(ctx)
-
 	<-s.ctx.Done()
 }
 
@@ -99,6 +97,9 @@ func (s *Scheduler) Reload(cfg *config.Config) {
 	if s.reporter != nil {
 		s.reporter.UpdateNotifiers(cfg.Notifiers)
 		s.reportConfig = cfg.Reporter
+		if s.ctx != nil {
+			s.startReporterScheduler(s.ctx)
+		}
 	}
 
 	// Build new monitor set
@@ -166,11 +167,12 @@ func (s *Scheduler) Reload(cfg *config.Config) {
 	log.Printf("scheduler: %d monitors active", len(s.monitors))
 }
 
-// startReporterScheduler starts the daily report scheduler if enabled.
+// startReporterScheduler starts the daily report scheduler if enabled. Called with s.mu held.
 func (s *Scheduler) startReporterScheduler(ctx context.Context) {
-	if s.reporter == nil || s.reportConfig == nil || !s.reportConfig.Enabled {
+	if s.reporter == nil || s.reportConfig == nil || !s.reportConfig.Enabled || s.reporterRunning {
 		return
 	}
+	s.reporterRunning = true
 
 	cronExpr := s.reportConfig.Cron
 	if cronExpr == "" {

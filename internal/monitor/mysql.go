@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	mysqldriver "github.com/go-sql-driver/mysql"
 	"github.com/cba/monitor/internal/config"
+	mysqldriver "github.com/go-sql-driver/mysql"
 )
 
 type mysqlMonitor struct{}
@@ -25,11 +25,10 @@ func (m *mysqlMonitor) Check(ctx context.Context, cfg *config.MonitorConfig) (*R
 	re := buildRemoteExec(cfg)
 
 	if re.User != "" {
-		sshClient, err := newSSHClient(ctx, re)
+		sshClient, err := sshClientFor(ctx, re)
 		if err != nil {
 			return nil, fmt.Errorf("mysql ssh: %w", err)
 		}
-		defer sshClient.Close()
 
 		host, port := parseMySQLHostPort(dsn)
 		if host == "" || port == "" {
@@ -42,7 +41,11 @@ func (m *mysqlMonitor) Check(ctx context.Context, cfg *config.MonitorConfig) (*R
 		}
 
 		dbCfg.DialFunc = func(ctx context.Context, network, addr string) (net.Conn, error) {
-			return sshDial(sshClient, host, port)
+			conn, err := sshDial(sshClient, host, port)
+			if err != nil {
+				markSSHBad(re, sshClient)
+			}
+			return conn, err
 		}
 
 		connector, err := mysqldriver.NewConnector(dbCfg)
