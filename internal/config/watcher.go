@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"log"
+	"path/filepath"
 	"sync"
 
 	"github.com/fsnotify/fsnotify"
@@ -36,9 +37,9 @@ func (w *Watcher) Start() error {
 	}
 	w.watcher = watcher
 
-	if err := watcher.Add(w.path); err != nil {
+	if err := watcher.Add(filepath.Dir(w.path)); err != nil {
 		watcher.Close()
-		return fmt.Errorf("watch file: %w", err)
+		return fmt.Errorf("watch dir: %w", err)
 	}
 
 	go w.loop()
@@ -72,7 +73,7 @@ func (w *Watcher) loop() {
 			if !ok {
 				return
 			}
-			if event.Op&fsnotify.Write == fsnotify.Write || event.Op&fsnotify.Create == fsnotify.Create {
+			if event.Name == w.path && event.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Rename) != 0 {
 				w.reload()
 			}
 		case err, ok := <-w.watcher.Errors:

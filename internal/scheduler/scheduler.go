@@ -27,9 +27,9 @@ type Scheduler struct {
 	alertMu    sync.Mutex
 
 	// Reporter for daily reports
-	reporter        *reporter.Reporter
-	reportConfig    *config.ReporterConfig
-	reporterRunning bool
+	reporter       *reporter.Reporter
+	reportConfig   *config.ReporterConfig
+	reporterCancel context.CancelFunc
 }
 
 type monitorRunner struct {
@@ -167,18 +167,24 @@ func (s *Scheduler) Reload(cfg *config.Config) {
 	log.Printf("scheduler: %d monitors active", len(s.monitors))
 }
 
-// startReporterScheduler starts the daily report scheduler if enabled. Called with s.mu held.
+// startReporterScheduler (重)启动日报调度，cron 等配置变更热重载即时生效。Called with s.mu held.
 func (s *Scheduler) startReporterScheduler(ctx context.Context) {
-	if s.reporter == nil || s.reportConfig == nil || !s.reportConfig.Enabled || s.reporterRunning {
+	if s.reporterCancel != nil {
+		s.reporterCancel()
+		s.reporterCancel = nil
+	}
+	if s.reporter == nil || s.reportConfig == nil || !s.reportConfig.Enabled {
 		return
 	}
-	s.reporterRunning = true
 
 	cronExpr := s.reportConfig.Cron
 	if cronExpr == "" {
 		log.Println("reporter: cron expression not set, skipping")
 		return
 	}
+
+	rctx, cancel := context.WithCancel(ctx)
+	s.reporterCancel = cancel
 
 	go func() {
 		for {
@@ -190,11 +196,11 @@ func (s *Scheduler) startReporterScheduler(ctx context.Context) {
 
 			timer := time.NewTimer(time.Until(nextRun))
 			select {
-			case <-ctx.Done():
+			case <-rctx.Done():
 				timer.Stop()
 				return
 			case <-timer.C:
-				s.sendDailyReport(ctx)
+				s.sendDailyReport(rctx)
 			}
 		}
 	}()
