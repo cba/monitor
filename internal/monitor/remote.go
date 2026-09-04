@@ -37,8 +37,8 @@ func buildRemoteExec(cfg *config.MonitorConfig) remoteExec {
 	}
 }
 
-// execCommand executes a command locally or via SSH.
-func execCommand(ctx context.Context, re remoteExec, cmd string) (string, error) {
+// execCommand executes a command locally or via SSH. Package var so tests can inject output.
+var execCommand = func(ctx context.Context, re remoteExec, cmd string) (string, error) {
 	if re.User == "" {
 		return localExec(ctx, cmd)
 	}
