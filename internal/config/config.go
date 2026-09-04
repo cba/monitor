@@ -28,6 +28,7 @@ type Config struct {
 	Defaults  Defaults         `yaml:"defaults"`
 	Monitors  []MonitorConfig  `yaml:"monitors"`
 	Notifiers []NotifierConfig `yaml:"notifiers"`
+	Reporter  *ReporterConfig  `yaml:"reporter,omitempty"`
 }
 
 // MonitorConfig holds a single monitor's configuration.
@@ -67,6 +68,14 @@ type NotifierConfig struct {
 	AgentID string `yaml:"agent_id,omitempty"`
 	Secret  string `yaml:"secret,omitempty"`
 	ToUsers string `yaml:"to_users,omitempty"`
+}
+
+// ReporterConfig holds daily report configuration.
+type ReporterConfig struct {
+	Enabled bool     `yaml:"enabled"`
+	Cron    string   `yaml:"cron"`
+	Title   string   `yaml:"title"`
+	Targets []string `yaml:"targets,omitempty"` // empty = all monitors
 }
 
 // Load reads a YAML config file.

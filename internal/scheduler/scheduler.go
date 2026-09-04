@@ -10,6 +10,7 @@ import (
 	"github.com/cba/monitor/internal/config"
 	"github.com/cba/monitor/internal/monitor"
 	"github.com/cba/monitor/internal/notifier"
+	"github.com/cba/monitor/internal/reporter"
 )
 
 // Scheduler runs monitoring goroutines.
@@ -24,6 +25,10 @@ type Scheduler struct {
 	// Alert state tracking (in-memory)
 	alertState map[string]*alertInfo
 	alertMu    sync.Mutex
+
+	// Reporter for daily reports
+	reporter     *reporter.Reporter
+	reportConfig *config.ReporterConfig
 }
 
 type monitorRunner struct {
@@ -37,10 +42,11 @@ type alertInfo struct {
 }
 
 // New creates a Scheduler.
-func New() *Scheduler {
+func New(r *reporter.Reporter) *Scheduler {
 	return &Scheduler{
 		monitors:   make(map[string]*monitorRunner),
 		alertState: make(map[string]*alertInfo),
+		reporter:   r,
 	}
 }
 
@@ -58,6 +64,10 @@ func (s *Scheduler) StartWithContext(ctx context.Context, ready chan struct{}) {
 	s.ctx, s.cancel = context.WithCancel(ctx)
 	s.mu.Unlock()
 	close(ready) // Signal that context is ready
+
+	// Start reporter scheduler
+	s.startReporterScheduler(ctx)
+
 	<-s.ctx.Done()
 }
 
@@ -84,6 +94,12 @@ func (s *Scheduler) Reload(cfg *config.Config) {
 	s.notifierMu.Lock()
 	s.notifiers = cfg.Notifiers
 	s.notifierMu.Unlock()
+
+	// Update reporter config
+	if s.reporter != nil {
+		s.reporter.UpdateNotifiers(cfg.Notifiers)
+		s.reportConfig = cfg.Reporter
+	}
 
 	// Build new monitor set
 	newSet := make(map[string]*config.MonitorConfig)
@@ -150,6 +166,180 @@ func (s *Scheduler) Reload(cfg *config.Config) {
 	log.Printf("scheduler: %d monitors active", len(s.monitors))
 }
 
+// startReporterScheduler starts the daily report scheduler if enabled.
+func (s *Scheduler) startReporterScheduler(ctx context.Context) {
+	if s.reporter == nil || s.reportConfig == nil || !s.reportConfig.Enabled {
+		return
+	}
+
+	cronExpr := s.reportConfig.Cron
+	if cronExpr == "" {
+		log.Println("reporter: cron expression not set, skipping")
+		return
+	}
+
+	go func() {
+		for {
+			nextRun := parseCronNext(cronExpr)
+			if nextRun.IsZero() {
+				log.Printf("reporter: invalid cron expression: %s", cronExpr)
+				return
+			}
+
+			timer := time.NewTimer(time.Until(nextRun))
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return
+			case <-timer.C:
+				s.sendDailyReport(ctx)
+			}
+		}
+	}()
+
+	log.Printf("reporter: scheduler started (cron=%s)", cronExpr)
+}
+
+func (s *Scheduler) sendDailyReport(ctx context.Context) {
+	title := s.reportConfig.Title
+	if title == "" {
+		title = "每日监控日报"
+	}
+
+	date := time.Now().Format("2006-01-02")
+	log.Printf("reporter: generating daily report for %s", date)
+
+	if err := s.reporter.GenerateAndSend(ctx, date, title); err != nil {
+		log.Printf("reporter: send daily report: %v", err)
+	} else {
+		log.Printf("reporter: daily report sent")
+	}
+}
+
+func parseCronNext(expr string) time.Time {
+	// Simple cron parser: only support "mm hh * * *" format
+	// Example: "0 8 * * *" = every day at 08:00
+	parts := splitCron(expr)
+	if len(parts) < 5 {
+		return time.Time{}
+	}
+
+	now := time.Now()
+	year, month, day := now.Date()
+	hour := now.Hour()
+	min := now.Minute()
+
+	// Parse cron fields
+	cronMin := -1
+	cronHour := -1
+	if parts[0] != "*" {
+		cronMin = parseInt(parts[0])
+	}
+	if parts[1] != "*" {
+		cronHour = parseInt(parts[1])
+	}
+
+	// Calculate next run time
+	nextMin := 0
+	nextHour := 0
+
+	if cronMin >= 0 && cronHour >= 0 {
+		// Both specified: check if today is still possible
+		if hour < cronHour || (hour == cronHour && min < cronMin) {
+			nextHour = cronHour
+			nextMin = cronMin
+		} else {
+			// Tomorrow
+			nextHour = cronHour
+			nextMin = cronMin
+			day++
+		}
+	} else if cronHour >= 0 {
+		// Only hour specified
+		if hour < cronHour {
+			nextHour = cronHour
+			nextMin = 0
+		} else if hour == cronHour {
+			// Same hour, next minute 0
+			nextHour = cronHour
+			nextMin = 0
+			day++ // Tomorrow same hour
+		} else {
+			// Tomorrow
+			nextHour = cronHour
+			nextMin = 0
+			day++
+		}
+	} else if cronMin >= 0 {
+		// Only minute specified: every hour at this minute
+		if min < cronMin {
+			nextHour = hour
+			nextMin = cronMin
+		} else {
+			nextHour = hour + 1
+			nextMin = cronMin
+			if nextHour > 23 {
+				nextHour = 0
+				day++
+			}
+		}
+	} else {
+		// Both wildcard: run every minute
+		nextHour = hour
+		nextMin = min + 1
+		if nextMin > 59 {
+			nextMin = 0
+			nextHour++
+			if nextHour > 23 {
+				nextHour = 0
+				day++
+			}
+		}
+	}
+
+	return time.Date(year, month, day, nextHour, nextMin, 0, 0, now.Location())
+}
+
+func splitCron(expr string) []string {
+	var parts []string
+	for _, p := range splitSpaces(expr) {
+		parts = append(parts, p)
+	}
+	for len(parts) < 5 {
+		parts = append(parts, "*")
+	}
+	return parts
+}
+
+func splitSpaces(s string) []string {
+	var result []string
+	start := 0
+	for i := 0; i < len(s); i++ {
+		if s[i] == ' ' {
+			if i > start {
+				result = append(result, s[start:i])
+			}
+			start = i + 1
+		}
+	}
+	if start < len(s) {
+		result = append(result, s[start:])
+	}
+	return result
+}
+
+func parseInt(s string) int {
+	n := 0
+	for _, c := range s {
+		if c >= '0' && c <= '9' {
+			n = n*10 + int(c-'0')
+		} else {
+			return -1
+		}
+	}
+	return n
+}
+
 func (s *Scheduler) runMonitor(ctx context.Context, m *config.MonitorConfig) {
 	ticker := time.NewTicker(time.Duration(m.Interval) * time.Second)
 	defer ticker.Stop()
@@ -181,6 +371,19 @@ func (s *Scheduler) checkAndAlert(ctx context.Context, m *config.MonitorConfig) 
 	}
 
 	log.Printf("[%s] %s: %s - %s (%v)", m.Type, m.Name, result.Status, result.Message, result.Latency)
+
+	// Record to reporter if enabled
+	if s.reporter != nil && s.reportConfig != nil && s.reportConfig.Enabled {
+		mr := &reporter.MonitorResult{
+			Name:      m.Name,
+			Status:    result.Status,
+			Latency:   result.Latency,
+			Timestamp: result.Timestamp,
+		}
+		if err := s.reporter.RecordCheck(m.Name, mr); err != nil {
+			log.Printf("reporter: record check: %v", err)
+		}
+	}
 
 	if result.Status == "down" || result.Status == "warning" {
 		if s.shouldAlert(m.Name, m.AlertInterval) {

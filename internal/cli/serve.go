@@ -7,6 +7,7 @@ import (
 	"syscall"
 
 	"github.com/cba/monitor/internal/config"
+	"github.com/cba/monitor/internal/reporter"
 	"github.com/cba/monitor/internal/scheduler"
 
 	"github.com/spf13/cobra"
@@ -26,8 +27,17 @@ var serveCmd = &cobra.Command{
 		ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 		defer cancel()
 
-		// Create scheduler
-		s := scheduler.New()
+		// Create reporter store
+		store, err := reporter.NewFileStore("data/reporter")
+		if err != nil {
+			return err
+		}
+
+		// Create reporter
+		r := reporter.New(store)
+
+		// Create scheduler with reporter
+		s := scheduler.New(r)
 
 		// Create config watcher for hot reload
 		watcher := config.NewWatcher(path, cfg, func(newCfg *config.Config) {
