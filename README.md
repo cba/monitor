@@ -8,6 +8,8 @@ A lightweight service monitoring tool with multiple monitor types and notificati
 
 - **12 monitor types**: HTTP/HTTPS, TCP port, ICMP Ping, SSL certificate, HTTP keyword, MySQL, Redis, CPU load, Memory, Disk, Process, Docker container
 - **3 notification channels**: WeChat Work Webhook, WeChat Work App API, DingTalk
+- **Daily report**: scheduled availability & latency summary pushed to configured channels
+- **SSH remote monitoring**: most types can run through an SSH bastion; connections to the same bastion are shared and reused
 - **Hot reload**: Auto-reload on config file changes, no restart needed
 - **Global defaults**: Per-monitor intervals optional, inherit from defaults
 - **Plugin architecture**: Easy to extend with new monitor types and notification channels
@@ -112,6 +114,11 @@ notifiers:
   - name: ops-team
     type: wechat
     webhook: https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY
+
+reporter:
+  enabled: true
+  cron: "30 9 * * *"   # every day at 09:30
+  title: "Daily Monitor Report"
 ```
 
 ### Defaults
@@ -161,6 +168,17 @@ notifiers:
 | agent_id | string | wechat_app | Application AgentId |
 | secret | string | wechat_app | Application Secret |
 | to_users | string | wechat_app | Recipient UserIDs, separated by `\|`, `@all` for everyone |
+
+### Reporter Config
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| enabled | bool | no | Enable daily report, default false |
+| cron | string | yes | Send time, only `min hour * * *` supported (fixed daily time) |
+| title | string | no | Report title, defaults to `每日监控日报` |
+| targets | list | no | Reserved; all monitors are included currently |
+
+Check results are persisted per day as JSON under `data/reporter/` in the process working directory; the report is sent through all enabled notifiers.
 
 ## Monitor Types
 
@@ -449,6 +467,14 @@ Monitor if a Docker container is running.
 - **container_name**: Docker container name
 - **Status**: Container running = up, stopped or not found = down
 
+## SSH Connection Reuse
+
+Remote monitors sharing an `ssh` bastion share one SSH connection:
+
+- Multiple monitors and check cycles reuse a single connection instead of doing a full TCP + auth handshake every check
+- Broken connections are evicted and rebuilt; a fresh dial whose handshake gets randomly RST (e.g. sshd `MaxStartups` early-dropping concurrent unauthenticated sessions) is retried once to avoid false alarms
+- If a public server still flakes alerts, raise `MaxStartups` in its `/etc/ssh/sshd_config` (e.g. `100:30:200`) and reload sshd
+
 ## Notification Channels
 
 ### WeChat Work Webhook
@@ -502,6 +528,7 @@ Config changes are automatically reloaded while the service is running:
 - New monitor added: auto-started
 - Monitor removed: auto-stopped
 - Monitor config changed: auto-restarted
+- Notifier / reporter config changed: takes effect immediately
 - Config format error: keeps old config, logs error
 
 ```bash

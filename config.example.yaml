@@ -169,3 +169,11 @@ notifiers:
   - name: 钉钉群
     type: dingtalk
     webhook: https://oapi.dingtalk.com/robot/send?access_token=YOUR_TOKEN
+
+# 每日监控日报（cron 仅支持 "分 时 * * *"，发送到上面所有启用的通知渠道）
+reporter:
+  enabled: true
+  cron: "30 9 * * *"    # 每天 09:30
+  title: "监控日报"
+  # targets 预留，当前统计全部监控项
+  targets: []

@@ -8,6 +8,8 @@
 
 - **12 种监控类型**：HTTP/HTTPS、TCP 端口、ICMP Ping、SSL 证书、HTTP 关键字、MySQL、Redis、CPU 负载、内存使用率、磁盘使用率、进程存活、Docker 容器
 - **3 种通知渠道**：企业微信 Webhook、企业微信应用消息、钉钉
+- **每日日报**：定时汇总各监控项可用率与平均延迟，推送到已配置的通知渠道
+- **SSH 远程监控**：多数类型可经 SSH 跳板执行，同一跳板共享连接并自动复用
 - **热更新**：修改配置文件后自动重载，无需重启
 - **全局默认值**：监控项可继承全局 interval/alert_interval 配置
 - **插件架构**：易于扩展新的监控类型和通知渠道
@@ -112,6 +114,11 @@ notifiers:
   - name: 运维群
     type: wechat
     webhook: https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY
+
+reporter:
+  enabled: true
+  cron: "30 9 * * *"   # 每天 09:30
+  title: "监控日报"
 ```
 
 ### 全局默认值
@@ -161,6 +168,17 @@ notifiers:
 | agent_id | string | wechat_app | 应用 AgentId |
 | secret | string | wechat_app | 应用 Secret |
 | to_users | string | wechat_app | 接收人 UserID，多个用 `\|` 分隔，`@all` 发送所有人 |
+
+### 日报配置
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| enabled | bool | 否 | 是否启用日报，默认 false |
+| cron | string | 是 | 发送时间，仅支持 `分 时 * * *`（每天固定时刻） |
+| title | string | 否 | 日报标题，默认 `每日监控日报` |
+| targets | list | 否 | 预留字段，当前统计全部监控项 |
+
+检查结果按天以 JSON 存放在进程工作目录 `data/reporter/` 下；日报复用 `notifiers` 中所有启用的渠道。
 
 ## 监控类型
 
@@ -449,6 +467,14 @@ notifiers:
 - **container_name**：Docker 容器名称
 - **判断标准**：容器运行中为 up，停止或不存在为 down
 
+## SSH 连接复用
+
+配置了 `ssh` 的远程监控共享同一跳板机的 SSH 连接：
+
+- 多个监控项、多个检查周期复用一条连接，避免每次检查都做完整的 TCP + 认证握手
+- 连接损坏或命令出错时自动剔除并重建；新建时握手偶发被 RST（如 sshd `MaxStartups` 随机丢弃并发未认证连接）会立即重试一次，减少误报
+- 公网服务器上 22 端口常有爆破流量占满未认证连接名额，若仍偶发误报，可调大其 `/etc/ssh/sshd_config` 中的 `MaxStartups`（如 `100:30:200`）并 reload sshd
+
 ## 通知渠道
 
 ### 企业微信
@@ -502,6 +528,7 @@ notifiers:
 - 添加新监控：自动启动
 - 删除监控：自动停止
 - 修改监控配置：自动重启
+- 修改通知/日报配置：即时生效
 - 配置格式错误：保持旧配置，记录错误日志
 
 ```bash
