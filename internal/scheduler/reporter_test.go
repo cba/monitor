@@ -118,7 +118,7 @@ func TestSchedulerIntegration(t *testing.T) {
 				Name:    "test-notifier",
 				Type:    "wechat",
 				Webhook: "https://test.webhook",
-				Enabled: false, // Disable to avoid actual HTTP calls
+				Enabled: ptr(false), // Disable to avoid actual HTTP calls
 			},
 		},
 		Reporter: &config.ReporterConfig{
@@ -146,3 +146,5 @@ func TestSchedulerIntegration(t *testing.T) {
 
 	t.Logf("Next run time: %s", next.Format("2006-01-02 15:04:05"))
 }
+
+func ptr[T any](v T) *T { return &v }

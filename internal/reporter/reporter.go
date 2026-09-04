@@ -85,7 +85,7 @@ func (r *Reporter) GenerateAndSend(ctx context.Context, date string, title strin
 	r.mu.RUnlock()
 
 	for _, nc := range notifiers {
-		if !nc.Enabled {
+		if nc.Enabled != nil && !*nc.Enabled {
 			continue
 		}
 
@@ -94,12 +94,7 @@ func (r *Reporter) GenerateAndSend(ctx context.Context, date string, title strin
 		case "wechat":
 			n = notifier.NewWeChatNotifier(nc.Webhook)
 		case "wechat_app":
-			n = notifier.NewWeChatAppNotifier(
-				nc.Extra["corp_id"],
-				nc.Extra["agent_id"],
-				nc.Extra["secret"],
-				nc.Extra["to_users"],
-			)
+			n = notifier.NewWeChatAppNotifier(nc.CorpID, nc.AgentID, nc.Secret, nc.ToUsers)
 		case "dingtalk":
 			n = notifier.NewDingTalkNotifier(nc.Webhook)
 		default:
